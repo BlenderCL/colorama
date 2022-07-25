@@ -4,6 +4,8 @@
 STDOUT = -11
 STDERR = -12
 
+winapi_test = lambda *_: True # hack para weed arreglar luego
+
 try:
     import ctypes
     from ctypes import LibraryLoader
@@ -14,7 +16,7 @@ except (AttributeError, ImportError):
     SetConsoleTextAttribute = lambda *_: None
     winapi_test = lambda *_: None
 else:
-    from ctypes import byref, Structure, c_char, POINTER
+    from .win32_util import *
 
     COORD = wintypes._COORD
 
@@ -83,9 +85,9 @@ else:
     ]
     _FillConsoleOutputAttribute.restype = wintypes.BOOL
 
-    _SetConsoleTitleW = windll.kernel32.SetConsoleTitleW
+    _SetConsoleTitleW = windll.kernel32.SetConsoleTitleA    # ctypes wrapper to SetConsoleTitleA instead
     _SetConsoleTitleW.argtypes = [
-        wintypes.LPCWSTR
+        wintypes.LPCSTR     # wintypes to LPCSTR instead of LPCWSTR
     ]
     _SetConsoleTitleW.restype = wintypes.BOOL
 
@@ -150,3 +152,65 @@ else:
 
     def SetConsoleTitle(title):
         return _SetConsoleTitleW(title)
+
+
+    # Extended wrappers New functions to console
+
+    _GetConsoleMode = windll.kernel32.GetConsoleMode
+    _GetConsoleMode.restype  = wintypes.BOOL
+    _GetConsoleMode.argtypes = [
+        wintypes.HANDLE,
+        POINTER(wintypes.DWORD)
+    ]
+
+    _SetConsoleMode = windll.kernel32.SetConsoleMode
+    _SetConsoleMode.restype  = wintypes.BOOL
+    _SetConsoleMode.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+    ]
+
+    _ReadConsoleInput = windll.kernel32.ReadConsoleInputW
+    _ReadConsoleInput.restype  = wintypes.BOOL
+    _ReadConsoleInput.argtypes = [
+        wintypes.HANDLE,
+        POINTER(INPUT_RECORD),
+        wintypes.DWORD,
+        POINTER(wintypes.DWORD)
+    ]
+
+    _SetConsoleScreenBufferSize = windll.kernel32.SetConsoleScreenBufferSize
+    _SetConsoleScreenBufferSize.restype  = wintypes.BOOL
+    _SetConsoleScreenBufferSize.argtypes = [
+        wintypes.HANDLE,
+        COORD,
+    ]
+
+
+    def GetConsoleMode(stream_id=STDIN):
+        handle = handles[stream_id]
+        mode = wintypes.DWORD()
+        success = _GetConsoleMode(handle, byref(mode))
+        return mode
+
+    def SetConsoleMode(stream_id=STDIN, mode=135):
+        handle = handles[stream_id]
+        return _SetConsoleMode(handle, mode)
+
+    def ReadConsoleInput(stream_id=STDIN, bfsize=10):
+        handle = handles[stream_id]
+        input_array = (INPUT_RECORD * bfsize)()
+        buffer_size = wintypes.DWORD(bfsize)
+        records_length = wintypes.DWORD()
+        success = _ReadConsoleInput(
+            handle,
+            input_array,
+            buffer_size,
+            byref(records_length),
+        )
+        return input_array[0:records_length.value]
+
+    def SetConsoleScreenBufferSize(width=80, height=24, stream_id=STDOUT):
+        handle = handles[stream_id]
+        size = COORD(width, height)
+        return _SetConsoleScreenBufferSize(handle, size)

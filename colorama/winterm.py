@@ -22,7 +22,13 @@ class WinStyle(object):
 class WinTerm(object):
 
     def __init__(self):
-        self._default = win32.GetConsoleScreenBufferInfo(win32.STDOUT).wAttributes
+        self._buffer_info = win32.GetConsoleScreenBufferInfo(win32.STDOUT)
+        i = self._buffer_info
+        width  = i.srWindow.Right - i.srWindow.Left + 1
+        height = i.srWindow.Bottom - i.srWindow.Top + 1
+        self._buffer_size = (i.dwSize.X, i.dwSize.Y)
+        self._size = (width, height)
+        self._default = self._buffer_info.wAttributes
         self.set_attrs(self._default)
         self._default_fore = self._fore
         self._default_back = self._back
@@ -32,6 +38,12 @@ class WinTerm(object):
         # we track them separately, since LIGHT_EX is overwritten by Fore/Back
         # and BRIGHT is overwritten by Style codes.
         self._light = 0
+
+    def get_buffer_size(self):
+        return self._buffer_size
+
+    def get_size(self):
+        return self._size
 
     def get_attrs(self):
         return self._fore + self._back * 16 + (self._style | self._light)
@@ -82,7 +94,7 @@ class WinTerm(object):
             handle = win32.STDERR
         win32.SetConsoleTextAttribute(handle, attrs)
 
-    def get_position(self, handle):
+    def get_position(self, handle = win32.STDOUT):
         position = win32.GetConsoleScreenBufferInfo(handle).dwCursorPosition
         # Because Windows coordinates are 0-based,
         # and win32.SetConsoleCursorPosition expects 1-based.
@@ -166,4 +178,24 @@ class WinTerm(object):
         win32.FillConsoleOutputAttribute(handle, self.get_attrs(), cells_to_erase, from_coord)
 
     def set_title(self, title):
-        win32.SetConsoleTitle(title)
+        #win32.SetConsoleTitle(title)
+        btitle = win32.ctypes.create_string_buffer(title.encode('utf-8'))
+        win32.SetConsoleTitle(btitle)
+
+    # New extended functions
+
+    def get_console_mode(self):
+        handle = win32.STDIN
+        return win32.GetConsoleMode(handle)
+
+    def set_console_mode(self, mode):
+        handle = win32.STDIN
+        return win32.SetConsoleMode(handle, mode)
+
+    def buffer_size_fit(self, fit_screen = True):
+        #handle = win32.STDOUT
+        if fit_screen:
+            return win32.SetConsoleScreenBufferSize(*self.get_size())
+        else:
+            return win32.SetConsoleScreenBufferSize(*self.get_buffer_size())
+

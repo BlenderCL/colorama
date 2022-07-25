@@ -1,0 +1,209 @@
+diff -cr ./colorama/colorama/win32.py ./site-packages_modificados/colorama_mod/win32.py
+*** ./colorama/colorama/win32.py	2022-07-20 12:36:39.234298700 -0400
+--- ./site-packages_modificados/colorama_mod/win32.py	2022-07-24 16:55:41.228948700 -0400
+***************
+*** 4,9 ****
+--- 4,11 ----
+  STDOUT = -11
+  STDERR = -12
+  
++ winapi_test = lambda *_: True # hack para weed arreglar luego
++ 
+  try:
+      import ctypes
+      from ctypes import LibraryLoader
+***************
+*** 14,20 ****
+      SetConsoleTextAttribute = lambda *_: None
+      winapi_test = lambda *_: None
+  else:
+!     from ctypes import byref, Structure, c_char, POINTER
+  
+      COORD = wintypes._COORD
+  
+--- 16,22 ----
+      SetConsoleTextAttribute = lambda *_: None
+      winapi_test = lambda *_: None
+  else:
+!     from .win32_util import *
+  
+      COORD = wintypes._COORD
+  
+***************
+*** 83,91 ****
+      ]
+      _FillConsoleOutputAttribute.restype = wintypes.BOOL
+  
+!     _SetConsoleTitleW = windll.kernel32.SetConsoleTitleW
+      _SetConsoleTitleW.argtypes = [
+!         wintypes.LPCWSTR
+      ]
+      _SetConsoleTitleW.restype = wintypes.BOOL
+  
+--- 85,93 ----
+      ]
+      _FillConsoleOutputAttribute.restype = wintypes.BOOL
+  
+!     _SetConsoleTitleW = windll.kernel32.SetConsoleTitleA    # ctypes wrapper to SetConsoleTitleA instead
+      _SetConsoleTitleW.argtypes = [
+!         wintypes.LPCSTR     # wintypes to LPCSTR instead of LPCWSTR
+      ]
+      _SetConsoleTitleW.restype = wintypes.BOOL
+  
+***************
+*** 150,152 ****
+--- 152,216 ----
+  
+      def SetConsoleTitle(title):
+          return _SetConsoleTitleW(title)
++ 
++ 
++     # Extended wrappers New functions to console
++ 
++     _GetConsoleMode = windll.kernel32.GetConsoleMode
++     _GetConsoleMode.restype  = wintypes.BOOL
++     _GetConsoleMode.argtypes = [
++         wintypes.HANDLE,
++         POINTER(wintypes.DWORD)
++     ]
++ 
++     _SetConsoleMode = windll.kernel32.SetConsoleMode
++     _SetConsoleMode.restype  = wintypes.BOOL
++     _SetConsoleMode.argtypes = [
++         wintypes.HANDLE,
++         wintypes.DWORD,
++     ]
++ 
++     _ReadConsoleInput = windll.kernel32.ReadConsoleInputW
++     _ReadConsoleInput.restype  = wintypes.BOOL
++     _ReadConsoleInput.argtypes = [
++         wintypes.HANDLE,
++         POINTER(INPUT_RECORD),
++         wintypes.DWORD,
++         POINTER(wintypes.DWORD)
++     ]
++ 
++     _SetConsoleScreenBufferSize = windll.kernel32.SetConsoleScreenBufferSize
++     _SetConsoleScreenBufferSize.restype  = wintypes.BOOL
++     _SetConsoleScreenBufferSize.argtypes = [
++         wintypes.HANDLE,
++         COORD,
++     ]
++ 
++ 
++     def GetConsoleMode(stream_id=STDIN):
++         handle = handles[stream_id]
++         mode = wintypes.DWORD()
++         success = _GetConsoleMode(handle, byref(mode))
++         return mode
++ 
++     def SetConsoleMode(stream_id=STDIN, mode=135):
++         handle = handles[stream_id]
++         return _SetConsoleMode(handle, mode)
++ 
++     def ReadConsoleInput(stream_id=STDIN, bfsize=10):
++         handle = handles[stream_id]
++         input_array = (INPUT_RECORD * bfsize)()
++         buffer_size = wintypes.DWORD(bfsize)
++         records_length = wintypes.DWORD()
++         success = _ReadConsoleInput(
++             handle,
++             input_array,
++             buffer_size,
++             byref(records_length),
++         )
++         return input_array[0:records_length.value]
++ 
++     def SetConsoleScreenBufferSize(width=80, height=24, stream_id=STDOUT):
++         handle = handles[stream_id]
++         size = COORD(width, height)
++         return _SetConsoleScreenBufferSize(handle, size)
+diff -cr ./colorama/colorama/winterm.py ./site-packages_modificados/colorama_mod/winterm.py
+*** ./colorama/colorama/winterm.py	2022-07-19 09:01:31.824719100 -0400
+--- ./site-packages_modificados/colorama_mod/winterm.py	2022-07-24 17:00:39.091545600 -0400
+***************
+*** 22,28 ****
+  class WinTerm(object):
+  
+      def __init__(self):
+!         self._default = win32.GetConsoleScreenBufferInfo(win32.STDOUT).wAttributes
+          self.set_attrs(self._default)
+          self._default_fore = self._fore
+          self._default_back = self._back
+--- 22,34 ----
+  class WinTerm(object):
+  
+      def __init__(self):
+!         self._buffer_info = win32.GetConsoleScreenBufferInfo(win32.STDOUT)
+!         i = self._buffer_info
+!         width  = i.srWindow.Right - i.srWindow.Left + 1
+!         height = i.srWindow.Bottom - i.srWindow.Top + 1
+!         self._buffer_size = (i.dwSize.X, i.dwSize.Y)
+!         self._size = (width, height)
+!         self._default = self._buffer_info.wAttributes
+          self.set_attrs(self._default)
+          self._default_fore = self._fore
+          self._default_back = self._back
+***************
+*** 33,38 ****
+--- 39,50 ----
+          # and BRIGHT is overwritten by Style codes.
+          self._light = 0
+  
++     def get_buffer_size(self):
++         return self._buffer_size
++ 
++     def get_size(self):
++         return self._size
++ 
+      def get_attrs(self):
+          return self._fore + self._back * 16 + (self._style | self._light)
+  
+***************
+*** 82,88 ****
+              handle = win32.STDERR
+          win32.SetConsoleTextAttribute(handle, attrs)
+  
+!     def get_position(self, handle):
+          position = win32.GetConsoleScreenBufferInfo(handle).dwCursorPosition
+          # Because Windows coordinates are 0-based,
+          # and win32.SetConsoleCursorPosition expects 1-based.
+--- 94,100 ----
+              handle = win32.STDERR
+          win32.SetConsoleTextAttribute(handle, attrs)
+  
+!     def get_position(self, handle = win32.STDOUT):
+          position = win32.GetConsoleScreenBufferInfo(handle).dwCursorPosition
+          # Because Windows coordinates are 0-based,
+          # and win32.SetConsoleCursorPosition expects 1-based.
+***************
+*** 166,169 ****
+          win32.FillConsoleOutputAttribute(handle, self.get_attrs(), cells_to_erase, from_coord)
+  
+      def set_title(self, title):
+!         win32.SetConsoleTitle(title)
+--- 178,201 ----
+          win32.FillConsoleOutputAttribute(handle, self.get_attrs(), cells_to_erase, from_coord)
+  
+      def set_title(self, title):
+!         #win32.SetConsoleTitle(title)
+!         btitle = win32.ctypes.create_string_buffer(title.encode('utf-8'))
+!         win32.SetConsoleTitle(btitle)
+! 
+!     # New extended functions
+! 
+!     def get_console_mode(self):
+!         handle = win32.STDIN
+!         return win32.GetConsoleMode(handle)
+! 
+!     def set_console_mode(self, mode):
+!         handle = win32.STDIN
+!         return win32.SetConsoleMode(handle, mode)
+! 
+!     def buffer_size_fit(self, fit_screen = True):
+!         #handle = win32.STDOUT
+!         if fit_screen:
+!             return win32.SetConsoleScreenBufferSize(*self.get_size())
+!         else:
+!             return win32.SetConsoleScreenBufferSize(*self.get_buffer_size())
+! 
