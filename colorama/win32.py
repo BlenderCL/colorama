@@ -188,17 +188,17 @@ else:
 
 
     def GetConsoleMode(stream_id=STDIN):
-        handle = handles[stream_id]
+        handle = _GetStdHandle(stream_id)
         mode = wintypes.DWORD()
         success = _GetConsoleMode(handle, byref(mode))
         return mode
 
     def SetConsoleMode(stream_id=STDIN, mode=135):
-        handle = handles[stream_id]
+        handle = _GetStdHandle(stream_id)
         return _SetConsoleMode(handle, mode)
 
     def ReadConsoleInput(stream_id=STDIN, bfsize=10):
-        handle = handles[stream_id]
+        handle = _GetStdHandle(stream_id)
         input_array = (INPUT_RECORD * bfsize)()
         buffer_size = wintypes.DWORD(bfsize)
         records_length = wintypes.DWORD()
@@ -211,6 +211,6 @@ else:
         return input_array[0:records_length.value]
 
     def SetConsoleScreenBufferSize(width=80, height=24, stream_id=STDOUT):
-        handle = handles[stream_id]
+        handle = _GetStdHandle(stream_id)
         size = COORD(width, height)
         return _SetConsoleScreenBufferSize(handle, size)
